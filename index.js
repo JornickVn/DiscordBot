@@ -1,15 +1,11 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder } = require("discord.js");
 const { Player } = require("discord-player");
 const { joinVoiceChannel } = require("@discordjs/voice");
-const { useMainPlayer, useExtractor } = require("discord-player");
 const { SpotifyExtractor, SoundCloudExtractor } = require("@discord-player/extractor");
-
-const mainPlayer = useMainPlayer(); 
-useExtractor(SoundCloudExtractor);
-useExtractor(SpotifyExtractor);
 
 require("dotenv").config();
 
+// Create the Discord client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -19,7 +15,10 @@ const client = new Client({
   ],
 });
 
-const player = new Player(client);
+// Initialize the player and hook in the extractors
+const player = new Player(client);  // Correct place to initialize the player
+player.use(SpotifyExtractor);
+player.use(SoundCloudExtractor);
 
 // Registering Slash Commands
 client.on("ready", async () => {
@@ -60,14 +59,14 @@ client.on("interactionCreate", async (interaction) => {
     const channel = member.voice.channel;
     if (!channel) return interaction.reply("You need to join a voice channel first!");
 
-    const queue = player.nodes.create(guild.id, {
+    const queue = player.createQueue(guild.id, {
       metadata: interaction.channel,
     });
 
     try {
       await queue.connect(channel);
     } catch {
-      queue.delete();
+      queue.destroy();
       return interaction.reply("Failed to join the voice channel.");
     }
 
@@ -84,16 +83,16 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   if (commandName === "skip") {
-    const queue = player.nodes.get(guild.id);
+    const queue = player.getQueue(guild.id);
     if (!queue || !queue.isPlaying()) return interaction.reply("No song is currently playing.");
-    queue.node.skip();
+    queue.skip();
     interaction.reply("⏭️ Skipped!");
   }
 
   if (commandName === "stop") {
-    const queue = player.nodes.get(guild.id);
+    const queue = player.getQueue(guild.id);
     if (!queue) return interaction.reply("No music is playing.");
-    queue.delete();
+    queue.destroy();
     interaction.reply("🛑 Stopped and left the channel.");
   }
 });
