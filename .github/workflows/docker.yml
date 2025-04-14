@@ -33,6 +33,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
 
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+            images: ghcr.io/${{ github.repository }}
+
       # Step 5: Set up Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -44,3 +50,4 @@ jobs:
           file: ./Dockerfile   
           push: true
           tags: ghcr.io/jornickvn/discordbot:latest  
+          labels: ${{ steps.meta.outputs.labels }}
