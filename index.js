@@ -7,14 +7,14 @@ require("dotenv").config();
 
 // Create the Discord client
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
-});
-
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildVoiceStates,    // Required for voice state updates
+      GatewayIntentBits.GuildMessages,       // Required for reading messages
+      GatewayIntentBits.MessageContent,      // Required to read message content (important for newer versions)
+      GatewayIntentBits.GuildMembers,        // Required for tracking members joining/leaving
+    ],
+  });
 // Initialize the player
 const player = new Player(client);
 
