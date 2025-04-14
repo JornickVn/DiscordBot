@@ -15,10 +15,12 @@ const client = new Client({
   ],
 });
 
-// Initialize the player and hook in the extractors
-const player = new Player(client);  // Correct place to initialize the player
-player.use(SpotifyExtractor);
-player.use(SoundCloudExtractor);
+// Initialize the player
+const player = new Player(client);
+
+// Register the extractors
+player.extractors.register(SpotifyExtractor);
+player.extractors.register(SoundCloudExtractor);
 
 // Registering Slash Commands
 client.on("ready", async () => {
