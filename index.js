@@ -61,44 +61,50 @@ client.on("interactionCreate", async (interaction) => {
     const query = options.getString("query");
     const channel = member.voice.channel;
     if (!channel) return interaction.reply("You need to join a voice channel first!");
-
-    // Create a queue for the guild
-    const queue = player.nodes.create(guild.id, {
+  
+    const queue = player.createQueue(guild.id, {
       metadata: interaction.channel,
     });
-
+  
     try {
-      // Try to connect to the voice channel
       await queue.connect(channel);
-    } catch (error) {
-      console.error(error);
+    } catch {
       queue.destroy();
       return interaction.reply("Failed to join the voice channel.");
     }
-
-    // Debugging: Log the search query
-    console.log(`Searching for: ${query}`);
-
-    // Search for the song
-    const searchResult = await player.search(query, {
+  
+    let searchResult;
+    if (query.includes("soundcloud.com")) {
+      // For SoundCloud URLs, force search to use SoundCloud extractor
+      searchResult = await player.search(query, {
         requestedBy: member.user,
-        searchEngine: "youtube"  // Force search to use YouTube (you can also try "soundcloud" for soundcloud links)
+        searchEngine: "soundcloud",
       });
-      
-
-    // Debugging: Log the raw search result
-    console.log(searchResult);
-
+    } else if (query.includes("youtube.com")) {
+      // For YouTube URLs, force search to use YouTube extractor
+      searchResult = await player.search(query, {
+        requestedBy: member.user,
+        searchEngine: "youtube",
+      });
+    } else {
+      // Default search (for non-URL queries)
+      searchResult = await player.search(query, {
+        requestedBy: member.user,
+      });
+    }
+  
+    console.log(searchResult); // Log the search result for debugging
+  
     if (!searchResult.tracks.length) {
       return interaction.reply("No results found.");
     }
-
-    // Add the track to the queue and start playing if not already playing
+  
     queue.addTrack(searchResult.tracks[0]);
-
+  
     if (!queue.isPlaying()) await queue.play();
     interaction.reply(`🎶 Now playing: **${searchResult.tracks[0].title}**`);
-}
+  }
+  
 
 
   if (commandName === "skip") {
