@@ -1,20 +1,22 @@
-# Use Node.js LTS version
+# Use Node.js LTS image
 FROM node:18
 
-# Create and set the app directory
+# Create app directory
 WORKDIR /app
 
-# Copy the package.json and package-lock.json (if available)
+# Copy files
 COPY package*.json ./
+COPY . .
 
 # Install dependencies
 RUN npm install
 
-# Copy the rest of the application code
-COPY . .
-
-# Expose the port your app will run on (optional)
+# Expose the bot port (optional)
 EXPOSE 3000
 
-# Start the app
+# Add labels for GitHub association
+LABEL org.opencontainers.image.source="https://github.com/JornickVn/DiscordBot"
+LABEL org.opencontainers.image.description="A Discord bot built with Node.js"
+
+# Run the bot
 CMD ["node", "index.js"]
