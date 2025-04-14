@@ -31,5 +31,6 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile
           push: true
           tags: ghcr.io/jornickvn/discordbot:latest
