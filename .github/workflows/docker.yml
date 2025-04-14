@@ -41,5 +41,6 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
+          file: ./Dockerfile   
           push: true
           tags: ghcr.io/jornickvn/discordbot:latest  
