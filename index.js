@@ -7,14 +7,15 @@ require("dotenv").config();
 
 // Create the Discord client
 const client = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildVoiceStates,    // Required for voice state updates
-      GatewayIntentBits.GuildMessages,       // Required for reading messages
-      GatewayIntentBits.MessageContent,      // Required to read message content (important for newer versions)
-      GatewayIntentBits.GuildMembers,        // Required for tracking members joining/leaving
-    ],
-  });
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,    // Required for voice state updates
+    GatewayIntentBits.GuildMessages,       // Required for reading messages
+    GatewayIntentBits.MessageContent,      // Required to read message content (important for newer versions)
+    GatewayIntentBits.GuildMembers,        // Required for tracking members joining/leaving
+  ],
+});
+
 // Initialize the player
 const player = new Player(client);
 
@@ -61,23 +62,28 @@ client.on("interactionCreate", async (interaction) => {
     const channel = member.voice.channel;
     if (!channel) return interaction.reply("You need to join a voice channel first!");
 
-    const queue = player.createQueue(guild.id, {
+    // Create a queue for the guild
+    const queue = player.nodes.create(guild.id, {
       metadata: interaction.channel,
     });
 
     try {
+      // Try to connect to the voice channel
       await queue.connect(channel);
-    } catch {
+    } catch (error) {
+      console.error(error);
       queue.destroy();
       return interaction.reply("Failed to join the voice channel.");
     }
 
+    // Search for the song
     const searchResult = await player.search(query, {
       requestedBy: member.user,
     });
 
     if (!searchResult.tracks.length) return interaction.reply("No results found.");
 
+    // Add the track to the queue and start playing if not already playing
     queue.addTrack(searchResult.tracks[0]);
 
     if (!queue.isPlaying()) await queue.play();
@@ -87,6 +93,8 @@ client.on("interactionCreate", async (interaction) => {
   if (commandName === "skip") {
     const queue = player.getQueue(guild.id);
     if (!queue || !queue.isPlaying()) return interaction.reply("No song is currently playing.");
+    
+    // Skip the current song
     queue.skip();
     interaction.reply("⏭️ Skipped!");
   }
@@ -94,6 +102,8 @@ client.on("interactionCreate", async (interaction) => {
   if (commandName === "stop") {
     const queue = player.getQueue(guild.id);
     if (!queue) return interaction.reply("No music is playing.");
+    
+    // Stop the music and leave the voice channel
     queue.destroy();
     interaction.reply("🛑 Stopped and left the channel.");
   }
