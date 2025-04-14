@@ -1,8 +1,6 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder } = require("discord.js");
 const { Player } = require("discord-player");
-const { joinVoiceChannel } = require("@discordjs/voice");
 const { SpotifyExtractor, SoundCloudExtractor } = require("@discord-player/extractor");
-
 require("dotenv").config();
 
 // Create the Discord client
@@ -62,13 +60,14 @@ client.on("interactionCreate", async (interaction) => {
     const channel = member.voice.channel;
     if (!channel) return interaction.reply("You need to join a voice channel first!");
   
+    // Create or get the music queue for the guild
     const queue = player.createQueue(guild.id, {
       metadata: interaction.channel,
     });
   
     try {
       await queue.connect(channel);
-    } catch {
+    } catch (error) {
       queue.destroy();
       return interaction.reply("Failed to join the voice channel.");
     }
@@ -104,8 +103,6 @@ client.on("interactionCreate", async (interaction) => {
     if (!queue.isPlaying()) await queue.play();
     interaction.reply(`🎶 Now playing: **${searchResult.tracks[0].title}**`);
   }
-  
-
 
   if (commandName === "skip") {
     const queue = player.getQueue(guild.id);
