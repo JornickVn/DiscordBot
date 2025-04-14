@@ -76,19 +76,30 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply("Failed to join the voice channel.");
     }
 
+    // Debugging: Log the search query
+    console.log(`Searching for: ${query}`);
+
     // Search for the song
     const searchResult = await player.search(query, {
-      requestedBy: member.user,
-    });
+        requestedBy: member.user,
+        searchEngine: "youtube"  // Force search to use YouTube (you can also try "soundcloud" for soundcloud links)
+      });
+      
 
-    if (!searchResult.tracks.length) return interaction.reply("No results found.");
+    // Debugging: Log the raw search result
+    console.log(searchResult);
+
+    if (!searchResult.tracks.length) {
+      return interaction.reply("No results found.");
+    }
 
     // Add the track to the queue and start playing if not already playing
     queue.addTrack(searchResult.tracks[0]);
 
     if (!queue.isPlaying()) await queue.play();
     interaction.reply(`🎶 Now playing: **${searchResult.tracks[0].title}**`);
-  }
+}
+
 
   if (commandName === "skip") {
     const queue = player.getQueue(guild.id);
