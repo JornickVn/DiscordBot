@@ -61,9 +61,14 @@ client.on("interactionCreate", async (interaction) => {
     if (!channel) return interaction.reply("You need to join a voice channel first!");
   
     // Create or get the music queue for the guild
-    const queue = player.createQueue(guild.id, {
-      metadata: interaction.channel,
-    });
+    const queue = player.getQueue(guild.id);
+    
+    if (!queue) {
+      // Create the queue if it doesn't exist
+      queue = player.createQueue(guild.id, {
+        metadata: interaction.channel,
+      });
+    }
   
     try {
       await queue.connect(channel);
