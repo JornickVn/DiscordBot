@@ -1,52 +1,72 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder } = require("discord.js");
-const { Player } = require("discord-player");
-const { DefaultExtractors } = require("@discord-player/extractor");
-require("dotenv").config();
+import { Client, GatewayIntentBits, SlashCommandBuilder } from "discord.js";
+import { Player, QueryType } from "discord-player";
+import extractorPkg from "@discord-player/extractor";
+const { DefaultExtractors } = extractorPkg; // Removed the buggy Bridge settings!
+import { YoutubeiExtractor } from "discord-player-youtubei";
+import dotenv from "dotenv";
+
+// Load environment variables
+dotenv.config();
 
 // Create the Discord client
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates,    // Required for voice state updates
-    GatewayIntentBits.GuildMessages,       // Required for reading messages
-    GatewayIntentBits.MessageContent,      // Required to read message content
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
   ],
 });
 
 // Initialize the player
 const player = new Player(client);
 
-// Registering Slash Commands
-client.on("ready", async () => {
-  console.log(`Logged in as ${client.user.tag}`);
-  
-  // Load all standard extractors (YouTube, Spotify, SoundCloud, etc.)
-  await player.extractors.loadMulti(DefaultExtractors);
-
-  // Register the slash commands globally
-  const commands = [
-    new SlashCommandBuilder()
-      .setName("play")
-      .setDescription("Play a song")
-      .addStringOption(option =>
-        option.setName("query")
-          .setDescription("The song name or URL to play")
-          .setRequired(true)),
-    
-    new SlashCommandBuilder()
-      .setName("skip")
-      .setDescription("Skip the current song"),
-    
-    new SlashCommandBuilder()
-      .setName("stop")
-      .setDescription("Stop the music and leave the voice channel")
-  ].map(command => command.toJSON());
-
-  // Register commands to all guilds the bot is in
-  await client.application.commands.set(commands);
+// --- ERROR HANDLERS ---
+player.events.on('error', (queue, error) => {
+    console.log(`[Queue Error] ${error.message}`);
+});
+player.events.on('playerError', (queue, error) => {
+    console.log(`[Audio Player Error] ${error.message}`);
 });
 
-// Slash Command Handler
+// --- READY EVENT ---
+client.once("clientReady", async () => {
+  console.log(`Logged in as ${client.user.tag}`);
+  
+  // 1. Register YouTube (with TV bypass)
+  await player.extractors.register(YoutubeiExtractor, {
+    streamOptions: { useClient: 'TV_EMBEDDED' }
+  });
+
+  // 2. Load the rest of the stable extractors
+  await player.extractors.loadMulti(DefaultExtractors);
+
+  // --- REGISTER COMMANDS ---
+  const commands = [
+    new SlashCommandBuilder()
+      .setName("playyt")
+      .setDescription("Play a song from YouTube (May be blocked)")
+      .addStringOption(option => option.setName("query").setDescription("YouTube URL or search term").setRequired(true)),
+    
+    new SlashCommandBuilder()
+      .setName("playspot")
+      .setDescription("Play a song from Spotify (Bridged via SoundCloud)")
+      .addStringOption(option => option.setName("query").setDescription("Spotify URL or search term").setRequired(true)),
+        
+    new SlashCommandBuilder()
+      .setName("playsc")
+      .setDescription("Play a song from SoundCloud (Most Stable!)")
+      .addStringOption(option => option.setName("query").setDescription("SoundCloud URL or search term").setRequired(true)),
+    
+    new SlashCommandBuilder().setName("skip").setDescription("Skip the current song"),
+    new SlashCommandBuilder().setName("stop").setDescription("Stop the music and leave the voice channel")
+  ].map(command => command.toJSON());
+
+  await client.application.commands.set(commands);
+  console.log("Commands registered and extractors loaded!");
+});
+
+// --- COMMAND HANDLER ---
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isCommand()) return;
 
@@ -55,40 +75,62 @@ client.on("interactionCreate", async (interaction) => {
 
   if (!channel) return interaction.reply("You need to join a voice channel first!");
 
-  // --- PLAY COMMAND ---
-  if (commandName === "play") {
-    const query = options.getString("query");
-    
-    // We defer the reply because connecting and searching can take a few seconds.
-    // If we don't do this, Discord will say "The application did not respond".
+  // --- MUSIC PLAYING COMMANDS ---
+  if (["playyt", "playspot", "playsc"].includes(commandName)) {
+    let query = options.getString("query");
     await interaction.deferReply();
 
+    // FIX 1: Clean up messy SoundCloud tracking links
+    if (query.includes("soundcloud.com") && query.includes("?")) {
+        query = query.split("?")[0]; // Cuts off the ?utm_source junk
+    }
+
+    let searchEngine = QueryType.AUTO;
+    const isUrl = query.startsWith("http://") || query.startsWith("https://");
+
+    // FIX 2: The Manual Spotify Bridge
+    if (commandName === "playspot") {
+        if (query.includes("spotify.com")) {
+            // Secretly read the Spotify link
+            const spotResult = await player.search(query, { searchEngine: QueryType.SPOTIFY_SEARCH });
+            if (spotResult.tracks.length > 0) {
+                // Delete the link and turn it into pure text (e.g., "Fukashigi no Carte Mai Sakurajima")
+                query = `${spotResult.tracks[0].title} ${spotResult.tracks[0].author}`;
+            }
+        }
+        // Force the engine to search SoundCloud for that exact text
+        searchEngine = QueryType.SOUNDCLOUD_SEARCH;
+    } 
+    else if (commandName === "playsc") {
+        searchEngine = isUrl ? QueryType.AUTO : QueryType.SOUNDCLOUD_SEARCH;
+    } 
+    else if (commandName === "playyt") {
+        searchEngine = isUrl ? QueryType.AUTO : QueryType.YOUTUBE_SEARCH;
+    }
+
     try {
-      // In discord-player v6, player.play() handles EVERYTHING:
-      // It creates the queue, joins the channel, searches for the song, and plays it.
       const { track } = await player.play(channel, query, {
+        searchEngine: searchEngine,
         nodeOptions: {
-          metadata: interaction.channel, // Store the text channel so we can send updates
+          metadata: interaction.channel,
           leaveOnEmpty: true,
-          leaveOnEmptyCooldown: 300000,  // Leave after 5 mins if empty
+          leaveOnEmptyCooldown: 300000,
           leaveOnEnd: true,
-          leaveOnEndCooldown: 300000,    // Leave 5 mins after the queue finishes
+          leaveOnEndCooldown: 300000,
         }
       });
 
       return interaction.followUp(`🎶 Added **${track.title}** to the queue!`);
     } catch (error) {
       console.error(error);
-      return interaction.followUp("Failed to play the track. YouTube might be blocking the request, or no results were found.");
+      return interaction.followUp("❌ Failed to play the track. If you used `/playyt`, YouTube is likely blocking the connection.");
     }
   }
 
   // --- SKIP COMMAND ---
   if (commandName === "skip") {
-    // In v6, queues are accessed via player.nodes
     const queue = player.nodes.get(guild.id);
     if (!queue || !queue.isPlaying()) return interaction.reply("No song is currently playing.");
-    
     queue.node.skip();
     return interaction.reply("⏭️ Skipped!");
   }
@@ -97,12 +139,9 @@ client.on("interactionCreate", async (interaction) => {
   if (commandName === "stop") {
     const queue = player.nodes.get(guild.id);
     if (!queue) return interaction.reply("No music is playing.");
-    
-    // Destroying the queue makes the bot stop playing and leave
     queue.delete();
     return interaction.reply("🛑 Stopped and left the channel.");
   }
 });
 
-// Use your custom variable
 client.login(process.env.BOT_TOKEN);
