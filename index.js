@@ -1,6 +1,6 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder } = require("discord.js");
 const { Player } = require("discord-player");
-const { SpotifyExtractor, SoundCloudExtractor } = require("@discord-player/extractor");
+const { DefaultExtractors } = require("@discord-player/extractor");
 require("dotenv").config();
 
 // Create the Discord client
@@ -9,22 +9,20 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildVoiceStates,    // Required for voice state updates
     GatewayIntentBits.GuildMessages,       // Required for reading messages
-    GatewayIntentBits.MessageContent,      // Required to read message content (important for newer versions)
-    GatewayIntentBits.GuildMembers,        // Required for tracking members joining/leaving
+    GatewayIntentBits.MessageContent,      // Required to read message content
   ],
 });
 
 // Initialize the player
 const player = new Player(client);
 
-// Register the extractors
-player.extractors.register(SpotifyExtractor);
-player.extractors.register(SoundCloudExtractor);
-
 // Registering Slash Commands
 client.on("ready", async () => {
   console.log(`Logged in as ${client.user.tag}`);
   
+  // Load all standard extractors (YouTube, Spotify, SoundCloud, etc.)
+  await player.extractors.loadMulti(DefaultExtractors);
+
   // Register the slash commands globally
   const commands = [
     new SlashCommandBuilder()
@@ -32,7 +30,7 @@ client.on("ready", async () => {
       .setDescription("Play a song")
       .addStringOption(option =>
         option.setName("query")
-          .setDescription("The song or URL to play")
+          .setDescription("The song name or URL to play")
           .setRequired(true)),
     
     new SlashCommandBuilder()
@@ -42,8 +40,7 @@ client.on("ready", async () => {
     new SlashCommandBuilder()
       .setName("stop")
       .setDescription("Stop the music and leave the voice channel")
-  ]
-  .map(command => command.toJSON());
+  ].map(command => command.toJSON());
 
   // Register commands to all guilds the bot is in
   await client.application.commands.set(commands);
@@ -54,78 +51,58 @@ client.on("interactionCreate", async (interaction) => {
   if (!interaction.isCommand()) return;
 
   const { commandName, options, member, guild } = interaction;
+  const channel = member.voice.channel;
 
+  if (!channel) return interaction.reply("You need to join a voice channel first!");
+
+  // --- PLAY COMMAND ---
   if (commandName === "play") {
     const query = options.getString("query");
-    const channel = member.voice.channel;
-    if (!channel) return interaction.reply("You need to join a voice channel first!");
-  
-    // Create or get the music queue for the guild
-    const queue = player.getQueue(guild.id);
     
-    if (!queue) {
-      // Create the queue if it doesn't exist
-      queue = player.createQueue(guild.id, {
-        metadata: interaction.channel,
-      });
-    }
-  
+    // We defer the reply because connecting and searching can take a few seconds.
+    // If we don't do this, Discord will say "The application did not respond".
+    await interaction.deferReply();
+
     try {
-      await queue.connect(channel);
+      // In discord-player v6, player.play() handles EVERYTHING:
+      // It creates the queue, joins the channel, searches for the song, and plays it.
+      const { track } = await player.play(channel, query, {
+        nodeOptions: {
+          metadata: interaction.channel, // Store the text channel so we can send updates
+          leaveOnEmpty: true,
+          leaveOnEmptyCooldown: 300000,  // Leave after 5 mins if empty
+          leaveOnEnd: true,
+          leaveOnEndCooldown: 300000,    // Leave 5 mins after the queue finishes
+        }
+      });
+
+      return interaction.followUp(`🎶 Added **${track.title}** to the queue!`);
     } catch (error) {
-      queue.destroy();
-      return interaction.reply("Failed to join the voice channel.");
+      console.error(error);
+      return interaction.followUp("Failed to play the track. YouTube might be blocking the request, or no results were found.");
     }
-  
-    let searchResult;
-    if (query.includes("soundcloud.com")) {
-      // For SoundCloud URLs, force search to use SoundCloud extractor
-      searchResult = await player.search(query, {
-        requestedBy: member.user,
-        searchEngine: "soundcloud",
-      });
-    } else if (query.includes("youtube.com")) {
-      // For YouTube URLs, force search to use YouTube extractor
-      searchResult = await player.search(query, {
-        requestedBy: member.user,
-        searchEngine: "youtube",
-      });
-    } else {
-      // Default search (for non-URL queries)
-      searchResult = await player.search(query, {
-        requestedBy: member.user,
-      });
-    }
-  
-    console.log(searchResult); // Log the search result for debugging
-  
-    if (!searchResult.tracks.length) {
-      return interaction.reply("No results found.");
-    }
-  
-    queue.addTrack(searchResult.tracks[0]);
-  
-    if (!queue.isPlaying()) await queue.play();
-    interaction.reply(`🎶 Now playing: **${searchResult.tracks[0].title}**`);
   }
 
+  // --- SKIP COMMAND ---
   if (commandName === "skip") {
-    const queue = player.getQueue(guild.id);
+    // In v6, queues are accessed via player.nodes
+    const queue = player.nodes.get(guild.id);
     if (!queue || !queue.isPlaying()) return interaction.reply("No song is currently playing.");
     
-    // Skip the current song
-    queue.skip();
-    interaction.reply("⏭️ Skipped!");
+    queue.node.skip();
+    return interaction.reply("⏭️ Skipped!");
   }
 
+  // --- STOP COMMAND ---
   if (commandName === "stop") {
-    const queue = player.getQueue(guild.id);
+    const queue = player.nodes.get(guild.id);
     if (!queue) return interaction.reply("No music is playing.");
     
-    // Stop the music and leave the voice channel
-    queue.destroy();
-    interaction.reply("🛑 Stopped and left the channel.");
+    // Destroying the queue makes the bot stop playing and leave
+    queue.delete();
+    return interaction.reply("🛑 Stopped and left the channel.");
   }
 });
 
+// Use your custom variable
 client.login(process.env.BOT_TOKEN);
